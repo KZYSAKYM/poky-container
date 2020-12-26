@@ -18,5 +18,6 @@ cd $workdir
 if [ $# -gt 0 ]; then
     exec "$@"
 else
+    cd /workdir
     exec bash -i
 fi

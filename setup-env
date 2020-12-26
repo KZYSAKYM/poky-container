@@ -1,0 +1,26 @@
+#!/bin/sh
+
+if [ -n "$BASH_SOURCE" ]; then
+    THIS=$BASH_SOURCE
+elif [ -n "$ZSH_NAME" ]; then
+    THIS=$0
+else
+    THIS=$(pwd)/setup-env
+    [ -f $THIS ] || {
+        echo "Not Found $THIS"
+        echo "Please execute setup-env from a same level"
+        return 1
+    }
+fi
+
+THIS_DIR=$(dirname $(readlink -f $THIS))
+
+export POKY_WORKDIR=$HOME/work
+export POKY_DLDIR=$HOME/work/downloads
+export POKY_SSTATE_DIR=$HOME/work/sstate-cache
+export POKY_BUILD_CMD=$THIS_DIR/build.sh
+
+[ -d $POKY_WORKDIR      ] || mkdir $POKY_WORKDIR -p
+[ -d $POKY_DLDIR        ] || mkdir $POKY_DLDIR -p
+[ -d $POKY_SSTATE_DIR   ] || mkdir $POKY_SSTATE_DIR -p
+[ -f $POKY_BUILD_CMD    ] || echo "[WARNING] Can't execute \`make build\`"

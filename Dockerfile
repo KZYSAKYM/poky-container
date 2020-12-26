@@ -16,11 +16,13 @@
 # Since this Dockerfile is used in multiple images, force the builder to
 # specify the BASE_DISTRO. This should hopefully prevent accidentally using
 # a default, when another distro was desired.
-ARG BASE_DISTRO=SPECIFY_ME
+ARG BASE_DISTRO=ubuntu-18.04
 
 FROM crops/yocto:$BASE_DISTRO-base
 
 USER root
+RUN DEBIAN_FRONTEND=noninteractive apt install -y \
+        vim
 
 ADD https://raw.githubusercontent.com/crops/extsdk-container/master/restrict_useradd.sh  \
         https://raw.githubusercontent.com/crops/extsdk-container/master/restrict_groupadd.sh \
