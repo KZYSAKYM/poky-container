@@ -4,9 +4,13 @@ THIS=$0
 THIS_DIR=$(dirname $(readlink -f $0))
 STAMP_DIR=${THIS_DIR}/.stamp
 BUILD_DIR=${THIS_DIR}/build
+BUILD_DIR_GUEST=${THIS_DIR}/build-guest
 LOCAL_CONF=${BUILD_DIR}/conf/local.conf
 BBLAYERS_CONF=${BUILD_DIR}/conf/bblayers.conf
+LOCAL_CONF_GUEST=${BUILD_DIR_GUEST}/conf/local.conf
+BBLAYERS_CONF_GUEST=${BUILD_DIR_GUEST}/conf/bblayers.conf
 MACHINE="raspberrypi4-64"
+MACHINE_GUEST="qemuarm64"
 DL_DIR="/workdir/downloads"
 SSTATE_DIR="/workdir/sstate-cache"
 
@@ -28,14 +32,14 @@ cmd() {
     eval $@
     case $? in
         0 )
-	    success "[EXEC] $@"
-	    ;;
-	2 )
-	    warn "[EXEC] $@"
-	    ;;
+      success "[EXEC] $@"
+      ;;
+  2 )
+      warn "[EXEC] $@"
+      ;;
         * )
-	    errexit "[EXEC] $@"
-	    ;;
+      errexit "[EXEC] $@"
+      ;;
     esac
 }
 
@@ -51,7 +55,7 @@ stamp_check_else() {
     local command=$@
     [ -n "$command" ] || local command=$task
     if [ -f $STAMP_DIR/$task.stamp ]; then
-	success "task \"$task\" is already done. skip."
+        success "task \"$task\" is already done. skip."
     else
         $command
     fi
@@ -74,12 +78,13 @@ fetch() {
         "git://git.yoctoproject.org/poky -b dunfell --depth 1"
         "git://git.openembedded.org/meta-openembedded -b dunfell --depth 1"
         "https://github.com/agherzan/meta-raspberrypi.git -b dunfell --depth 1"
+        "https://github.com/KZYSAKYM/meta-rpi-qemuarm64.git -b main --depth 1"
     )
     for repo in "${REPOS[@]}"; do
-	local stamp_name=$(basename `echo $repo | awk '{print $1}'`)-fetch
-	subtask() {
-	    cmd "git clone $repo"
-	    stamp $stamp_name
+        local stamp_name=$(basename `echo $repo | awk '{print $1}'`)-fetch
+        subtask() {
+            cmd "git clone $repo"
+            stamp $stamp_name
         }
         stamp_check_else $stamp_name subtask
     done
@@ -94,17 +99,18 @@ configure() {
     cd $THIS_DIR
     cmd "source $POKY/oe-init-build-env $BUILD_DIR"
     LAYERS=(
-    	"$THIS_DIR/meta-openembedded/meta-oe"
+        "$THIS_DIR/meta-openembedded/meta-oe"
         "$THIS_DIR/meta-openembedded/meta-python"
-    	"$THIS_DIR/meta-openembedded/meta-multimedia"
-    	"$THIS_DIR/meta-openembedded/meta-networking"
-    	"$THIS_DIR/meta-raspberrypi"
+        "$THIS_DIR/meta-openembedded/meta-multimedia"
+        "$THIS_DIR/meta-openembedded/meta-networking"
+        "$THIS_DIR/meta-raspberrypi"
+        "$THIS_DIR/meta-rpi-qemuarm64"
     )
     for layer in "${LAYERS[@]}"; do
-	local stamp_name=$(basename $layer)-layer-add
-	subtask() {
-	    echo "BBLAYERS += \"$layer\"" >> $BBLAYERS_CONF
-	    stamp $stamp_name
+        local stamp_name=$(basename $layer)-layer-add
+        subtask() {
+            echo "BBLAYERS += \"$layer\"" >> $BBLAYERS_CONF
+            stamp $stamp_name
         }
         stamp_check_else $stamp_name subtask
     done
@@ -112,13 +118,41 @@ configure() {
         echo "MACHINE = \"$MACHINE\"" >> $LOCAL_CONF
         echo "DL_DIR = \"$DL_DIR\"" >> $LOCAL_CONF
         echo "SSTATE_DIR = \"$SSTATE_DIR\"" >> $LOCAL_CONF
-        echo "IMAGE_INSTALL_append = \" qemu weston\"" >> $LOCAL_CONF
-        echo "VIDEO_CAMERA = \"1\"" >> $LOCAL_CONF
-        echo "RASPBERRYPI_CAMERA_V2 = \"1\"" >> $LOCAL_CONF
-        echo "ENABLE_I2C = \"1\"" >> $LOCAL_CONF
         stamp append_local_conf
     }
     stamp_check_else append_local_conf
+    stamp configure
+}
+
+configure_guest() {
+    POKY=$THIS_DIR/poky
+    [ -d $POKY ] || errexit "Not Found $POKY"
+
+    stamp_clean configure_guest
+    cd $THIS_DIR
+    cmd "source $POKY/oe-init-build-env $BUILD_DIR_GUEST"
+    LAYERS=(
+        "$THIS_DIR/meta-openembedded/meta-oe"
+        "$THIS_DIR/meta-openembedded/meta-python"
+        "$THIS_DIR/meta-openembedded/meta-multimedia"
+        "$THIS_DIR/meta-openembedded/meta-networking"
+        "$THIS_DIR/meta-rpi-qemuarm64"
+    )
+    for layer in "${LAYERS[@]}"; do
+        local stamp_name=$(basename $layer)-layer-add-guest
+        subtask() {
+            echo "BBLAYERS += \"$layer\"" >> $BBLAYERS_CONF_GUEST
+            stamp $stamp_name
+        }
+        stamp_check_else $stamp_name subtask
+    done
+    append_local_conf_guest() {
+        echo "MACHINE = \"$MACHINE_GUEST\"" >> $LOCAL_CONF_GUEST
+        echo "DL_DIR = \"$DL_DIR\"" >> $LOCAL_CONF_GUEST
+        echo "SSTATE_DIR = \"$SSTATE_DIR\"" >> $LOCAL_CONF_GUEST
+        stamp append_local_conf_guest
+    }
+    stamp_check_else append_local_conf_guest
     stamp configure
 }
 
@@ -129,12 +163,26 @@ build() {
     stamp_clean build
     cd $THIS_DIR
     cmd "source $POKY/oe-init-build-env $BUILD_DIR"
-    cmd "bitbake rpi-test-image"
-    success "build rpi-test-image"
+    cmd "bitbake rpi-qemuarm64-host-image"
+    success "build rpi-qemuarm64-host-image"
     stamp build
+}
+
+build_guest() {
+    POKY=$THIS_DIR/poky
+    [ -d $POKY ] || errexit "Not Found $POKY"
+
+    stamp_clean build_guest
+    cd $THIS_DIR
+    cmd "source $POKY/oe-init-build-env $BUILD_DIR_GUEST"
+    cmd "bitbake rpi-qemuarm64-guest-image"
+    success "build rpi-qemuarm64-guest-image"
+    stamp build_guest
 }
 
 # Workflow
 stamp_check_else fetch
 stamp_check_else configure
 build
+stamp_check_else configure_guest
+build_guest
